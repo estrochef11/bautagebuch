@@ -21,17 +21,27 @@ def create_pdf(data, photos):
 
     # LOGO oben rechts
     if os.path.exists("logo.png"):
-        try:
-            c.drawImage(
-                "logo.png",
-                width - 50 * mm,
-                height - 25 * mm,
-                width=35 * mm,
-                preserveAspectRatio=True,
-                mask='auto'
-            )
-        except:
-            pass
+   # LOGO oben rechts (robuster)
+try:
+    logo = Image.open("logo.png")
+    logo = logo.convert("RGBA")
+
+    logo_buffer = io.BytesIO()
+    logo.save(logo_buffer, format="PNG")
+    logo_buffer.seek(0)
+
+    c.drawImage(
+        ImageReader(logo_buffer),
+        width - 55 * mm,
+        height - 30 * mm,
+        width=40 * mm,
+        height=20 * mm,
+        preserveAspectRatio=True,
+        mask='auto'
+    )
+except Exception:
+    pass
+
 
     def header(page_no):
         c.setFont("Helvetica", 9)
@@ -195,3 +205,4 @@ if submit:
         file_name=filename,
         mime="application/pdf"
     )
+
