@@ -2,6 +2,7 @@ import streamlit as st
 from datetime import date
 import io
 from PIL import Image
+import os
 
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
@@ -9,7 +10,6 @@ from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 
 
-PROJECT_NAME = "Helen Keller Realschule"
 FLOORS = ["E1", "E2", "O1"]
 WEATHER_OPTIONS = ["Sonnig", "Bewölkt", "Regen", "Schnee", "Frost", "Wind"]
 
@@ -19,15 +19,29 @@ def create_pdf(data, photos):
     c = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
 
+    # LOGO oben rechts
+    if os.path.exists("logo.png"):
+        try:
+            c.drawImage(
+                "logo.png",
+                width - 50 * mm,
+                height - 25 * mm,
+                width=35 * mm,
+                preserveAspectRatio=True,
+                mask='auto'
+            )
+        except:
+            pass
+
     def header(page_no):
         c.setFont("Helvetica", 9)
-        c.drawString(20 * mm, height - 12 * mm, f"Projekt: {PROJECT_NAME}")
+        c.drawString(20 * mm, height - 12 * mm, f"Projekt: {data['projekt']}")
         c.drawRightString(width - 20 * mm, 12 * mm, f"Seite {page_no}")
 
     page_no = 1
     header(page_no)
 
-    y = height - 25 * mm
+    y = height - 35 * mm
     c.setFont("Helvetica-Bold", 14)
     c.drawString(20 * mm, y, "BAUTAGEBUCH – TAGESBERICHT")
     y -= 12 * mm
@@ -65,7 +79,6 @@ def create_pdf(data, photos):
             y = height - 25 * mm
             c.setFont("Helvetica", 11)
 
-        # lange Zeilen kürzen
         if len(txt) > 120:
             txt = txt[:120] + "..."
 
@@ -119,9 +132,9 @@ def create_pdf(data, photos):
 st.set_page_config(page_title="Bautagebuch", layout="wide")
 
 st.title("Digitales Bautagebuch")
-st.caption(f"Projekt: {PROJECT_NAME}")
 
 with st.form("bautagebuch_form"):
+    projekt = st.text_input("Projektname", value="Estrobau Auerbach e.K.")
     datum = st.date_input("Datum", value=date.today())
     geschoss = st.selectbox("Geschoss", FLOORS)
     bauleitung = st.text_input("Bauleitung / Verantwortlicher")
@@ -156,6 +169,7 @@ if submit:
             photo_list.append((f.name, f.read()))
 
     data = {
+        "projekt": projekt,
         "datum": datum.strftime("%d.%m.%Y"),
         "geschoss": geschoss,
         "bauleitung": bauleitung,
@@ -172,7 +186,7 @@ if submit:
 
     pdf_bytes = create_pdf(data, photo_list)
 
-    filename = f"Bautagebuch_{PROJECT_NAME.replace(' ', '_')}_{datum.strftime('%Y-%m-%d')}_{geschoss}.pdf"
+    filename = f"Bautagebuch_{projekt.replace(' ', '_')}_{datum.strftime('%Y-%m-%d')}_{geschoss}.pdf"
 
     st.success("PDF wurde erstellt.")
     st.download_button(
@@ -181,8 +195,3 @@ if submit:
         file_name=filename,
         mime="application/pdf"
     )
-
-    if photo_list:
-        st.subheader("Foto-Vorschau")
-        for name, img in photo_list:
-            st.image(img, caption=name, use_container_width=True)
