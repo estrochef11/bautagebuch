@@ -95,24 +95,47 @@ except Exception:
         c.drawString(20 * mm, y, txt)
         y -= 6 * mm
 
-    # Fotos auf extra Seiten
-    for i, (name, img_bytes) in enumerate(photos, start=1):
-        c.showPage()
-        page_no += 1
-        header(page_no)
+# Fotos im Raster (4 pro Seite)
+if photos:
+    c.showPage()
+    page_no += 1
+    header(page_no)
 
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(20 * mm, height - 25 * mm, f"Foto {i}: {name}")
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(20 * mm, height - 20 * mm, "Fotodokumentation")
+
+    # Raster-Einstellungen
+    positions = [
+        (20 * mm, height - 80 * mm),
+        (110 * mm, height - 80 * mm),
+        (20 * mm, height - 170 * mm),
+        (110 * mm, height - 170 * mm),
+    ]
+
+    img_w = 80 * mm
+    img_h = 60 * mm
+
+    for idx, (name, img_bytes) in enumerate(photos, start=1):
+
+        if (idx - 1) % 4 == 0 and idx != 1:
+            c.showPage()
+            page_no += 1
+            header(page_no)
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(20 * mm, height - 20 * mm, "Fotodokumentation")
+
+        pos_index = (idx - 1) % 4
+        x, y = positions[pos_index]
+
+        c.setFont("Helvetica", 9)
+        c.drawString(x, y + 5 * mm, f"Foto {idx}: {name}")
 
         try:
             img = Image.open(io.BytesIO(img_bytes))
             img = img.convert("RGB")
 
-            max_w = width - 40 * mm
-            max_h = height - 60 * mm
-
             iw, ih = img.size
-            scale = min(max_w / iw, max_h / ih)
+            scale = min(img_w / iw, img_h / ih)
 
             new_w = iw * scale
             new_h = ih * scale
@@ -123,16 +146,17 @@ except Exception:
 
             c.drawImage(
                 ImageReader(img_buffer),
-                20 * mm,
-                (height - 35 * mm) - new_h,
+                x,
+                y - new_h,
                 width=new_w,
                 height=new_h,
                 preserveAspectRatio=True,
                 mask='auto'
             )
+
         except:
-            c.setFont("Helvetica", 11)
-            c.drawString(20 * mm, height - 40 * mm, "Bild konnte nicht eingebettet werden.")
+            c.drawString(x, y - 10 * mm, "Bild konnte nicht geladen werden.")
+
 
     c.save()
     buffer.seek(0)
@@ -205,4 +229,5 @@ if submit:
         file_name=filename,
         mime="application/pdf"
     )
+
 
