@@ -2,7 +2,6 @@ import streamlit as st
 from datetime import date
 import io
 from PIL import Image
-import os
 
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
@@ -14,158 +13,211 @@ FLOORS = ["E1", "E2", "O1"]
 WEATHER_OPTIONS = ["Sonnig", "Bewölkt", "Regen", "Schnee", "Frost", "Wind"]
 
 
+def draw_header(c, width, height, projekt, page_no):
+    c.setFont("Helvetica", 9)
+    c.drawString(20 * mm, height - 12 * mm, f"Projekt: {projekt}")
+    c.drawRightString(width - 20 * mm, 12 * mm, f"Seite {page_no}")
+
+
+def draw_logo_top_right(c, width, height):
+    # Robustes Einfügen aus logo.png (falls vorhanden)
+    try:
+        logo = Image.open("logo.png").convert("RGBA")
+        buf = io.BytesIO()
+        logo.save(buf, format="PNG")
+        buf.seek(0)
+
+        # Position oben rechts
+        # (x, y) ist unten links der Grafik
+        c.drawImage(
+            ImageReader(buf),
+            width - 60 * mm,
+            height - 30 * mm,
+            width=45 * mm,
+            height=18 * mm,
+            preserveAspectRatio=True,
+            mask="auto",
+        )
+    except Exception:
+        # Kein Logo oder nicht lesbar -> einfach ohne Logo weiter
+        pass
+
+
+def add_wrapped_text(c, text, x, y, max_width_mm, font_name="Helvetica", font_size=11, line_height_mm=6):
+    """
+    Einfacher Textumbruch für ReportLab.
+    """
+    c.setFont(font_name, font_size)
+    max_width = max_width_mm * mm
+    words = (text or "").split()
+    if not words:
+        c.drawString(x, y, "-")
+        return y - (line_height_mm * mm)
+
+    line = ""
+    for w in words:
+        test = (line + " " + w).strip()
+        if c.stringWidth(test, font_name, font_size) <= max_width:
+            line = test
+        else:
+            c.drawString(x, y, line)
+            y -= line_height_mm * mm
+            line = w
+    if line:
+        c.drawString(x, y, line)
+        y -= line_height_mm * mm
+    return y
+
+
 def create_pdf(data, photos):
-    buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
 
-    # LOGO oben rechts
-    if os.path.exists("logo.png"):
-   # LOGO oben rechts (robuster)
-try:
-    logo = Image.open("logo.png")
-    logo = logo.convert("RGBA")
-
-    logo_buffer = io.BytesIO()
-    logo.save(logo_buffer, format="PNG")
-    logo_buffer.seek(0)
-
-    c.drawImage(
-        ImageReader(logo_buffer),
-        width - 55 * mm,
-        height - 30 * mm,
-        width=40 * mm,
-        height=20 * mm,
-        preserveAspectRatio=True,
-        mask='auto'
-    )
-except Exception:
-    pass
-
-
-    def header(page_no):
-        c.setFont("Helvetica", 9)
-        c.drawString(20 * mm, height - 12 * mm, f"Projekt: {data['projekt']}")
-        c.drawRightString(width - 20 * mm, 12 * mm, f"Seite {page_no}")
-
     page_no = 1
-    header(page_no)
 
+    # Logo + Header
+    draw_logo_top_right(c, width, height)
+    draw_header(c, width, height, data["projekt"], page_no)
+
+    # Titel
     y = height - 35 * mm
     c.setFont("Helvetica-Bold", 14)
     c.drawString(20 * mm, y, "BAUTAGEBUCH – TAGESBERICHT")
-    y -= 12 * mm
+    y -= 10 * mm
 
     c.setFont("Helvetica", 11)
-
+    # Stammdaten
     lines = [
         f"Datum: {data['datum']}",
         f"Geschoss: {data['geschoss']}",
         f"Bauleitung: {data['bauleitung'] or '-'}",
         f"Wetter: {', '.join(data['wetter']) if data['wetter'] else '-'}",
-        f"Temperatur: {data['temperatur'] or '-'} °C",
+        f"Temperatur: {data['temperatur'] + ' °C' if data['temperatur'] else '-'}",
         "",
-        "Personal:",
+        "Personal (Anzahl):",
         f"  Polier: {data['polier']}",
         f"  Vorarbeiter: {data['vorarbeiter']}",
         f"  Facharbeiter: {data['facharbeiter']}",
         f"  Bauwerker: {data['bauwerker']}",
         "",
         "Ausgeführte Arbeiten:",
-        data['arbeiten'] or "-",
-        "",
-        "Materiallieferungen:",
-        data['material'] or "-",
-        "",
-        "Behinderungen / Mängel:",
-        data['maengel'] or "-",
     ]
 
-    for txt in lines:
+    for t in lines:
         if y < 25 * mm:
             c.showPage()
             page_no += 1
-            header(page_no)
+            draw_logo_top_right(c, width, height)
+            draw_header(c, width, height, data["projekt"], page_no)
             y = height - 25 * mm
             c.setFont("Helvetica", 11)
 
-        if len(txt) > 120:
-            txt = txt[:120] + "..."
-
-        c.drawString(20 * mm, y, txt)
+        c.drawString(20 * mm, y, t)
         y -= 6 * mm
 
-# Fotos im Raster (4 pro Seite)
-if photos:
-    c.showPage()
-    page_no += 1
-    header(page_no)
+    # Arbeiten mit Umbruch
+    y = add_wrapped_text(c, data["arbeiten"] or "-", 20 * mm, y, max_width_mm=170)
 
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(20 * mm, height - 20 * mm, "Fotodokumentation")
+    # Material
+    if y < 35 * mm:
+        c.showPage()
+        page_no += 1
+        draw_logo_top_right(c, width, height)
+        draw_header(c, width, height, data["projekt"], page_no)
+        y = height - 25 * mm
 
-    # Raster-Einstellungen
-    positions = [
-        (20 * mm, height - 80 * mm),
-        (110 * mm, height - 80 * mm),
-        (20 * mm, height - 170 * mm),
-        (110 * mm, height - 170 * mm),
-    ]
+    c.setFont("Helvetica", 11)
+    c.drawString(20 * mm, y, "Materiallieferungen:")
+    y -= 6 * mm
+    y = add_wrapped_text(c, data["material"] or "-", 20 * mm, y, max_width_mm=170)
 
-    img_w = 80 * mm
-    img_h = 60 * mm
+    # Mängel
+    if y < 35 * mm:
+        c.showPage()
+        page_no += 1
+        draw_logo_top_right(c, width, height)
+        draw_header(c, width, height, data["projekt"], page_no)
+        y = height - 25 * mm
 
-    for idx, (name, img_bytes) in enumerate(photos, start=1):
+    c.setFont("Helvetica", 11)
+    c.drawString(20 * mm, y, "Behinderungen / Mängel:")
+    y -= 6 * mm
+    y = add_wrapped_text(c, data["maengel"] or "-", 20 * mm, y, max_width_mm=170)
 
-        if (idx - 1) % 4 == 0 and idx != 1:
+    # Fotos als Raster (4 pro Seite)
+    if photos:
+        def new_photo_page():
+            nonlocal page_no
             c.showPage()
             page_no += 1
-            header(page_no)
+            draw_logo_top_right(c, width, height)
+            draw_header(c, width, height, data["projekt"], page_no)
             c.setFont("Helvetica-Bold", 12)
             c.drawString(20 * mm, height - 20 * mm, "Fotodokumentation")
 
-        pos_index = (idx - 1) % 4
-        x, y = positions[pos_index]
+        new_photo_page()
 
-        c.setFont("Helvetica", 9)
-        c.drawString(x, y + 5 * mm, f"Foto {idx}: {name}")
+        positions = [
+            (20 * mm, height - 40 * mm),
+            (110 * mm, height - 40 * mm),
+            (20 * mm, height - 135 * mm),
+            (110 * mm, height - 135 * mm),
+        ]
+        cell_w = 80 * mm
+        cell_h = 60 * mm
 
-        try:
-            img = Image.open(io.BytesIO(img_bytes))
-            img = img.convert("RGB")
+        for idx, (name, img_bytes) in enumerate(photos, start=1):
+            if (idx - 1) % 4 == 0 and idx != 1:
+                new_photo_page()
 
-            iw, ih = img.size
-            scale = min(img_w / iw, img_h / ih)
+            pos = (idx - 1) % 4
+            x, top_y = positions[pos]
 
-            new_w = iw * scale
-            new_h = ih * scale
+            # Bildtitel
+            c.setFont("Helvetica", 9)
+            title = f"Foto {idx}: {name}"
+            if len(title) > 55:
+                title = title[:55] + "..."
+            c.drawString(x, top_y, title)
 
-            img_buffer = io.BytesIO()
-            img.save(img_buffer, format="JPEG", quality=85)
-            img_buffer.seek(0)
+            try:
+                img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
 
-            c.drawImage(
-                ImageReader(img_buffer),
-                x,
-                y - new_h,
-                width=new_w,
-                height=new_h,
-                preserveAspectRatio=True,
-                mask='auto'
-            )
+                iw, ih = img.size
+                scale = min(cell_w / iw, cell_h / ih)
+                new_w = iw * scale
+                new_h = ih * scale
 
-        except:
-            c.drawString(x, y - 10 * mm, "Bild konnte nicht geladen werden.")
+                img_buf = io.BytesIO()
+                img.save(img_buf, format="JPEG", quality=85)
+                img_buf.seek(0)
 
+                # Bild unter Titel platzieren
+                c.drawImage(
+                    ImageReader(img_buf),
+                    x,
+                    top_y - 5 * mm - new_h,
+                    width=new_w,
+                    height=new_h,
+                    preserveAspectRatio=True,
+                    mask="auto",
+                )
+            except Exception:
+                c.drawString(x, top_y - 12 * mm, "Bild konnte nicht geladen werden.")
 
     c.save()
-    buffer.seek(0)
-    return buffer.getvalue()
+    buf.seek(0)
+    return buf.getvalue()
 
 
+# -------------------------
+# Streamlit UI
+# -------------------------
 st.set_page_config(page_title="Bautagebuch", layout="wide")
 
 st.title("Digitales Bautagebuch")
+st.caption("PDF-Export mit Logo & Fotodokumentation (Raster)")
 
 with st.form("bautagebuch_form"):
     projekt = st.text_input("Projektname", value="Estrobau Auerbach e.K.")
@@ -177,10 +229,10 @@ with st.form("bautagebuch_form"):
     temperatur = st.text_input("Temperatur (°C)")
 
     st.subheader("Personal (Anzahl)")
-    polier = st.number_input("Polier", min_value=0, value=0)
-    vorarbeiter = st.number_input("Vorarbeiter", min_value=0, value=0)
-    facharbeiter = st.number_input("Facharbeiter", min_value=0, value=0)
-    bauwerker = st.number_input("Bauwerker", min_value=0, value=0)
+    polier = st.number_input("Polier", min_value=0, value=0, step=1)
+    vorarbeiter = st.number_input("Vorarbeiter", min_value=0, value=0, step=1)
+    facharbeiter = st.number_input("Facharbeiter", min_value=0, value=0, step=1)
+    bauwerker = st.number_input("Bauwerker", min_value=0, value=0, step=1)
 
     st.subheader("Ausgeführte Arbeiten")
     arbeiten = st.text_area("Leistungsbeschreibung / Besonderheiten", height=120)
@@ -192,7 +244,11 @@ with st.form("bautagebuch_form"):
     maengel = st.text_area("Beschreibung / Ursache / Verantwortlicher / Dauer", height=80)
 
     st.subheader("Fotos")
-    fotos = st.file_uploader("Fotos hochladen", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+    fotos = st.file_uploader(
+        "Fotos hochladen (JPG/PNG) – werden im PDF als Raster (4 pro Seite) gesetzt",
+        type=["jpg", "jpeg", "png"],
+        accept_multiple_files=True,
+    )
 
     submit = st.form_submit_button("PDF erzeugen")
 
@@ -203,31 +259,35 @@ if submit:
             photo_list.append((f.name, f.read()))
 
     data = {
-        "projekt": projekt,
+        "projekt": projekt.strip() or "Projekt",
         "datum": datum.strftime("%d.%m.%Y"),
         "geschoss": geschoss,
-        "bauleitung": bauleitung,
+        "bauleitung": bauleitung.strip(),
         "wetter": wetter,
-        "temperatur": temperatur,
-        "polier": polier,
-        "vorarbeiter": vorarbeiter,
-        "facharbeiter": facharbeiter,
-        "bauwerker": bauwerker,
-        "arbeiten": arbeiten,
-        "material": material,
-        "maengel": maengel,
+        "temperatur": temperatur.strip(),
+        "polier": int(polier),
+        "vorarbeiter": int(vorarbeiter),
+        "facharbeiter": int(facharbeiter),
+        "bauwerker": int(bauwerker),
+        "arbeiten": arbeiten.strip(),
+        "material": material.strip(),
+        "maengel": maengel.strip(),
     }
 
     pdf_bytes = create_pdf(data, photo_list)
 
-    filename = f"Bautagebuch_{projekt.replace(' ', '_')}_{datum.strftime('%Y-%m-%d')}_{geschoss}.pdf"
+    safe_project = "".join(ch for ch in data["projekt"] if ch.isalnum() or ch in (" ", "_", "-")).strip().replace(" ", "_")
+    filename = f"Bautagebuch_{safe_project}_{datum.strftime('%Y-%m-%d')}_{geschoss}.pdf"
 
     st.success("PDF wurde erstellt.")
     st.download_button(
         "⬇️ PDF herunterladen",
         data=pdf_bytes,
         file_name=filename,
-        mime="application/pdf"
+        mime="application/pdf",
     )
 
-
+    if photo_list:
+        st.subheader("Foto-Vorschau")
+        for name, img in photo_list:
+            st.image(img, caption=name, use_container_width=True)
