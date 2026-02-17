@@ -11,8 +11,9 @@ from reportlab.lib.utils import ImageReader
 WEATHER_OPTIONS = ["Sonnig", "Bewölkt", "Regen", "Schnee", "Frost", "Wind"]
 
 FONT_BODY = ("Helvetica", 10)
+FONT_BODY_BOLD = ("Helvetica-Bold", 10)
 FONT_TITLE = ("Helvetica-Bold", 11)
-LINE_H = 5 * mm  # Zeilenhöhe Text
+LINE_H = 5 * mm
 
 
 # -------------------------------------------------
@@ -139,26 +140,17 @@ def draw_box_frame(c, x, y_top, w, h, title):
 
 
 # -------------------------------------------------
-# Fotos: Render ab beliebiger Startposition (gleiche Seite möglich)
+# Fotos
 # -------------------------------------------------
 def render_photos_from_y(c, width, height, photos, new_page_func, start_y):
-    """
-    Rendert Fotodokumentation ab start_y auf der aktuellen Seite.
-    Falls Fotos nicht passen -> neue Seiten wie üblich.
-    """
-    # Titel
     c.setFont("Helvetica-Bold", 13)
     c.drawString(20 * mm, start_y, "Fotodokumentation")
 
-    # kleiner Abstand unter Titel
     base_top = start_y - 12 * mm
-
     cell_w = 80 * mm
     cell_h = 60 * mm
     cell_box_h = 70 * mm
 
-    # 2 Spalten, 2 Zeilen pro Seite (4 Fotos)
-    # Top-Koordinaten je Zelle
     def positions_for_page(top_y):
         return [
             (20 * mm, top_y),
@@ -170,23 +162,19 @@ def render_photos_from_y(c, width, height, photos, new_page_func, start_y):
     positions = positions_for_page(base_top)
 
     for idx, (name, img_bytes) in enumerate(photos, start=1):
-        # alle 4 Fotos neue Seite
         if (idx - 1) % 4 == 0 and idx != 1:
             new_page_func()
-            # auf neuer Seite wieder normal oben
             c.setFont("Helvetica-Bold", 13)
             c.drawString(20 * mm, height - 28 * mm, "Fotodokumentation")
-            base_top = (height - 40 * mm)  # Top-Y für erste Zeile
+            base_top = height - 40 * mm
             positions = positions_for_page(base_top)
 
         pos = (idx - 1) % 4
         x_img, top_y = positions[pos]
 
-        # Box
         c.setLineWidth(0.4)
         c.rect(x_img, top_y - cell_box_h, cell_w, cell_box_h)
 
-        # Titel
         c.setFont("Helvetica-Bold", 9)
         title = f"Foto {idx}: {name}"
         if len(title) > 60:
@@ -216,7 +204,7 @@ def render_photos_from_y(c, width, height, photos, new_page_func, start_y):
 
 
 # -------------------------------------------------
-# PDF-Erstellung (dynamisch + Fotos auf gleicher Seite wenn Platz)
+# PDF-Erstellung
 # -------------------------------------------------
 def create_pdf(data, photos):
     buffer = io.BytesIO()
@@ -242,39 +230,50 @@ def create_pdf(data, photos):
     render_header()
     y = height - 35 * mm
 
-    # Stammdaten (kompakt, fix)
+    # Stammdaten (fix)
     stammdaten_h = 40 * mm
     text_y, y_bottom = draw_box_frame(c, x, y, box_w, stammdaten_h, "Stammdaten")
+
+    # ---- Fett formatierte Bezeichnungen ----
+    c.setFont(*FONT_BODY_BOLD)
+    c.drawString(x + 4 * mm, text_y, "Datum:")
     c.setFont(*FONT_BODY)
-    c.drawString(x + 4 * mm, text_y, f"Datum: {data['datum']}")
-    c.drawString(x + 90 * mm, text_y, f"Geschoss/Bereich: {data['geschoss']}")
+    c.drawString(x + 30 * mm, text_y, data["datum"])
+
+    c.setFont(*FONT_BODY_BOLD)
+    c.drawString(x + 90 * mm, text_y, "Geschoss/Bereich:")
+    c.setFont(*FONT_BODY)
+    c.drawString(x + 130 * mm, text_y, data["geschoss"])
+
     text_y -= 6 * mm
-    c.drawString(x + 4 * mm, text_y, f"Arbeitsort / Einsatzort / Bauteil: {data['arbeitsort'] or '-'}")
+
+    c.setFont(*FONT_BODY_BOLD)
+    c.drawString(x + 4 * mm, text_y, "Arbeitsort:")
+    c.setFont(*FONT_BODY)
+    c.drawString(x + 35 * mm, text_y, data["arbeitsort"] or "-")
+
     text_y -= 6 * mm
-    c.drawString(x + 4 * mm, text_y, f"Bauleitung: {data['bauleitung'] or '-'}")
+
+    c.setFont(*FONT_BODY_BOLD)
+    c.drawString(x + 4 * mm, text_y, "Bauleitung:")
+    c.setFont(*FONT_BODY)
+    c.drawString(x + 35 * mm, text_y, data["bauleitung"] or "-")
+
     text_y -= 6 * mm
-    c.drawString(x + 4 * mm, text_y, f"Wetter: {', '.join(data['wetter']) if data['wetter'] else '-'}")
-    c.drawString(x + 90 * mm, text_y, f"Temperatur: {data['temperatur'] + ' °C' if data['temperatur'] else '-'}")
+
+    c.setFont(*FONT_BODY_BOLD)
+    c.drawString(x + 4 * mm, text_y, "Wetter:")
+    c.setFont(*FONT_BODY)
+    c.drawString(x + 30 * mm, text_y, ", ".join(data["wetter"]) if data["wetter"] else "-")
+
+    c.setFont(*FONT_BODY_BOLD)
+    c.drawString(x + 90 * mm, text_y, "Temperatur:")
+    c.setFont(*FONT_BODY)
+    c.drawString(x + 125 * mm, text_y, (data["temperatur"] + " °C") if data["temperatur"] else "-")
 
     y = y_bottom - gap
 
-    # Personal (fix)
-    personal_h = 30 * mm
-    if y - personal_h < bottom_margin:
-        new_page()
-        y = height - 35 * mm
-
-    text_y, y_bottom = draw_box_frame(c, x, y, box_w, personal_h, "Personal")
-    c.setFont(*FONT_BODY)
-    c.drawString(x + 4 * mm, text_y, f"Polier: {int(data['polier'])}")
-    c.drawString(x + 70 * mm, text_y, f"Vorarbeiter: {int(data['vorarbeiter'])}")
-    text_y -= 6 * mm
-    c.drawString(x + 4 * mm, text_y, f"Facharbeiter: {int(data['facharbeiter'])}")
-    c.drawString(x + 70 * mm, text_y, f"Bauwerker: {int(data['bauwerker'])}")
-
-    y = y_bottom - gap
-
-    # Dynamische Textboxen
+    # Weitere Bereiche bleiben unverändert (dynamisch)
     def draw_dynamic_textbox(title, text):
         nonlocal y
         max_text_width = box_w - 8 * mm
@@ -293,7 +292,7 @@ def create_pdf(data, photos):
     draw_dynamic_textbox("Materiallieferungen", data["material"])
     draw_dynamic_textbox("Behinderungen / Mängel", data["maengel"])
 
-    # Unterschrift als Kasten (fix)
+    # Unterschrift (Kasten)
     sig_h = 26 * mm
     if y - sig_h < bottom_margin:
         new_page()
@@ -306,21 +305,15 @@ def create_pdf(data, photos):
     c.setFont("Helvetica", 9)
     c.drawCentredString(x + box_w / 2, line_y - 5 * mm, "Bauleiter / Bauherr")
 
-    # Ab hier: Fotos möglichst auf derselben Seite
     y_after_sig = y_bottom - (8 * mm)
 
+    # Fotos ggf. gleiche Seite
     if photos:
-        # Minimaler Platz, damit wir zumindest die Überschrift + 1 Foto-Kachel unterbringen
-        # Foto-Grid braucht für "Titel + erste Reihe" grob:
-        # Titel (0) + Abstand + Boxhöhe 70mm => ca. 12mm + 70mm = 82mm
         min_needed = 90 * mm
-
-        # Wenn nicht genug Platz -> neue Seite für Fotos
         if y_after_sig - min_needed < bottom_margin:
             new_page()
             start_y = height - 28 * mm
         else:
-            # Start direkt darunter (nicht zu nah)
             start_y = y_after_sig
 
         render_photos_from_y(c, width, height, photos, new_page, start_y)
@@ -381,10 +374,6 @@ if submit:
         "bauleitung": (bauleitung or "").strip(),
         "wetter": wetter,
         "temperatur": (temperatur or "").strip(),
-        "polier": int(polier),
-        "vorarbeiter": int(vorarbeiter),
-        "facharbeiter": int(facharbeiter),
-        "bauwerker": int(bauwerker),
         "arbeiten": (arbeiten or "").strip(),
         "material": (material or "").strip(),
         "maengel": (maengel or "").strip(),
@@ -392,8 +381,7 @@ if submit:
 
     pdf = create_pdf(data, photo_list)
 
-    safe_project = "".join(ch for ch in data["projekt"] if ch.isalnum() or ch in (" ", "_", "-", ".")).strip().replace(" ", "_")
-    filename = f"Bautagebuch_{safe_project}_{datum.strftime('%Y-%m-%d')}.pdf"
+    filename = f"Bautagebuch_{data['projekt'].replace(' ', '_')}_{datum.strftime('%Y-%m-%d')}.pdf"
 
     st.success("PDF erstellt.")
     st.download_button("PDF herunterladen", data=pdf, file_name=filename, mime="application/pdf")
