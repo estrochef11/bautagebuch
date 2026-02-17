@@ -16,7 +16,6 @@ WEATHER_OPTIONS = ["Sonnig", "Bewölkt", "Regen", "Schnee", "Frost", "Wind"]
 # -------------------------------------------------
 def compress_image(img_bytes, max_size=1800, quality=75):
     img = Image.open(io.BytesIO(img_bytes))
-
     if img.mode in ("RGBA", "P"):
         img = img.convert("RGB")
 
@@ -110,19 +109,78 @@ def wrap_text(c, text, x, y, max_width_mm):
     return y
 
 
-def draw_signature_fields(c, width, y_position):
-    line_length = 60 * mm
+def draw_signature_single(c, width, y_line):
+    """
+    Eine Unterschrift: Bauleiter/Bauherr
+    """
+    line_len = 110 * mm
+    x_left = (width - line_len) / 2
 
     c.setLineWidth(0.8)
+    c.line(x_left, y_line, x_left + line_len, y_line)
 
-    # Bauleiter
-    c.line(25 * mm, y_position, 25 * mm + line_length, y_position)
     c.setFont("Helvetica", 9)
-    c.drawCentredString(25 * mm + line_length / 2, y_position - 5 * mm, "Bauleiter")
+    c.drawCentredString(width / 2, y_line - 5 * mm, "Unterschrift Bauleiter / Bauherr")
 
-    # Bauherr
-    c.line(width - 25 * mm - line_length, y_position, width - 25 * mm, y_position)
-    c.drawCentredString(width - 25 * mm - line_length / 2, y_position - 5 * mm, "Bauherr")
+
+# -------------------------------------------------
+# Fotoseiten (kapseln wir sauber)
+# -------------------------------------------------
+def render_photos(c, width, height, photos, new_page_func):
+    c.setFont("Helvetica-Bold", 13)
+    c.drawString(20 * mm, height - 28 * mm, "Fotodokumentation")
+
+    # kleiner Abstand unter "Fotodokumentation"
+    foto_start_y = height - 40 * mm
+
+    positions = [
+        (20 * mm, foto_start_y),
+        (110 * mm, foto_start_y),
+        (20 * mm, foto_start_y - 95 * mm),
+        (110 * mm, foto_start_y - 95 * mm),
+    ]
+
+    cell_w = 80 * mm
+    cell_h = 60 * mm
+
+    for idx, (name, img_bytes) in enumerate(photos, start=1):
+        if (idx - 1) % 4 == 0 and idx != 1:
+            new_page_func()
+            c.setFont("Helvetica-Bold", 13)
+            c.drawString(20 * mm, height - 28 * mm, "Fotodokumentation")
+
+        pos = (idx - 1) % 4
+        x_img, top_y = positions[pos]
+
+        c.setLineWidth(0.4)
+        c.rect(x_img, top_y - 70 * mm, cell_w, 70 * mm)
+
+        c.setFont("Helvetica-Bold", 9)
+        title = f"Foto {idx}: {name}"
+        if len(title) > 60:
+            title = title[:60] + "..."
+        c.drawString(x_img + 3 * mm, top_y - 6 * mm, title)
+
+        try:
+            compressed = compress_image(img_bytes)
+            img = Image.open(compressed).convert("RGB")
+            iw, ih = img.size
+            scale = min(cell_w / iw, cell_h / ih)
+            new_w = iw * scale
+            new_h = ih * scale
+            compressed.seek(0)
+
+            c.drawImage(
+                ImageReader(compressed),
+                x_img + (cell_w - new_w) / 2,
+                (top_y - 12 * mm) - new_h,
+                width=new_w,
+                height=new_h,
+                preserveAspectRatio=True,
+                mask="auto",
+            )
+        except:
+            pass
 
 
 # -------------------------------------------------
@@ -146,118 +204,92 @@ def create_pdf(data, photos):
 
     render_header()
 
+    # Start unter Kopf (kleiner Abstand)
     y = height - 35 * mm
     box_width = width - 30 * mm
     x = 15 * mm
+    gap = 6 * mm  # etwas kompakter
 
-    # Stammdaten
-    y_content, y_bottom = draw_box(c, x, y, box_width, 50 * mm, "Stammdaten")
+    # Stammdaten (kleiner gemacht)
+    y_content, y_bottom = draw_box(c, x, y, box_width, 42 * mm, "Stammdaten")
     c.setFont("Helvetica", 10)
-
     c.drawString(x + 4 * mm, y_content, f"Datum: {data['datum']}")
     c.drawString(x + 90 * mm, y_content, f"Geschoss/Bereich: {data['geschoss']}")
     y_content -= 6 * mm
-
     c.drawString(x + 4 * mm, y_content, f"Arbeitsort / Einsatzort / Bauteil: {data['arbeitsort'] or '-'}")
     y_content -= 6 * mm
-
     c.drawString(x + 4 * mm, y_content, f"Bauleitung: {data['bauleitung'] or '-'}")
     y_content -= 6 * mm
-
     c.drawString(x + 4 * mm, y_content, f"Wetter: {', '.join(data['wetter']) if data['wetter'] else '-'}")
     c.drawString(x + 90 * mm, y_content, f"Temperatur: {data['temperatur'] + ' °C' if data['temperatur'] else '-'}")
 
-    y = y_bottom - 10 * mm
+    y = y_bottom - gap
 
     # Personal
     y_content, y_bottom = draw_box(c, x, y, box_width, 30 * mm, "Personal")
     c.setFont("Helvetica", 10)
-    c.drawString(x + 4 * mm, y_content, f"Polier: {data['polier']}")
-    c.drawString(x + 70 * mm, y_content, f"Vorarbeiter: {data['vorarbeiter']}")
+    c.drawString(x + 4 * mm, y_content, f"Polier: {int(data['polier'])}")
+    c.drawString(x + 70 * mm, y_content, f"Vorarbeiter: {int(data['vorarbeiter'])}")
     y_content -= 6 * mm
-    c.drawString(x + 4 * mm, y_content, f"Facharbeiter: {data['facharbeiter']}")
-    c.drawString(x + 70 * mm, y_content, f"Bauwerker: {data['bauwerker']}")
+    c.drawString(x + 4 * mm, y_content, f"Facharbeiter: {int(data['facharbeiter'])}")
+    c.drawString(x + 70 * mm, y_content, f"Bauwerker: {int(data['bauwerker'])}")
 
-    y = y_bottom - 10 * mm
+    y = y_bottom - gap
 
     # Arbeiten
-    y_content, y_bottom = draw_box(c, x, y, box_width, 45 * mm, "Ausgeführte Arbeiten")
+    y_content, y_bottom = draw_box(c, x, y, box_width, 42 * mm, "Ausgeführte Arbeiten")
     wrap_text(c, data["arbeiten"], x + 4 * mm, y_content, 170)
 
-    y = y_bottom - 10 * mm
+    y = y_bottom - gap
 
     # Material
-    y_content, y_bottom = draw_box(c, x, y, box_width, 40 * mm, "Materiallieferungen")
+    y_content, y_bottom = draw_box(c, x, y, box_width, 34 * mm, "Materiallieferungen")
     wrap_text(c, data["material"], x + 4 * mm, y_content, 170)
 
-    y = y_bottom - 10 * mm
+    y = y_bottom - gap
 
     # Mängel
-    y_content, y_bottom = draw_box(c, x, y, box_width, 40 * mm, "Behinderungen / Mängel")
+    y_content, y_bottom = draw_box(c, x, y, box_width, 34 * mm, "Behinderungen / Mängel")
     wrap_text(c, data["maengel"], x + 4 * mm, y_content, 170)
 
-    y = y_bottom - 15 * mm
+    # -------------------------------------------------
+    # Unterschrift: bevorzugt auf Seite 1 unter den Kästen
+    # -------------------------------------------------
+    signature_needed_height = 18 * mm  # Linie + Beschriftung
+    min_bottom_margin = 20 * mm
+    y_after_boxes = y_bottom - (8 * mm)  # kleiner Abstand nach Box
 
-    # Falls zu wenig Platz -> neue Seite für Unterschrift
-    if y < 40 * mm:
-        new_page()
-        y = height - 60 * mm
+    # Prüfen, ob Platz bis Seitenende reicht
+    if y_after_boxes - signature_needed_height >= min_bottom_margin:
+        sig_y = max(min_bottom_margin + 10 * mm, y_after_boxes)  # "max" verhindert zu tief
+        draw_signature_single(c, width, sig_y)
+        signature_on_first_page = True
+    else:
+        signature_on_first_page = False
 
-    draw_signature_fields(c, width, y)
-
-    # Fotos
+    # -------------------------------------------------
+    # Fotos: wenn Signatur nicht passte -> neue Seite, dort oben Signatur,
+    # dann direkt darunter Fotodokumentation (keine Signatur-Blankoseite)
+    # -------------------------------------------------
     if photos:
-        new_page()
-        c.setFont("Helvetica-Bold", 13)
-        c.drawString(20 * mm, height - 28 * mm, "Fotodokumentation")
+        if not signature_on_first_page:
+            new_page()
+            # Unterschrift oben
+            sig_y = height - 55 * mm
+            draw_signature_single(c, width, sig_y)
 
-        foto_start_y = height - 40 * mm
+            # Fotodoku direkt darunter
+            c.setFont("Helvetica-Bold", 13)
+            c.drawString(20 * mm, height - 75 * mm, "Fotodokumentation")
+            # Wir rendern Fotos ab der "normalen" Fotoposition, aber etwas nach unten versetzt
+            # -> dafür nutzen wir einfach render_photos auf einer frischen Seite:
+            # Trick: neue Seite, damit die Standardposition passt und ruhig bleibt
+            new_page()
+            render_photos(c, width, height, photos, new_page)
 
-        positions = [
-            (20 * mm, foto_start_y),
-            (110 * mm, foto_start_y),
-            (20 * mm, foto_start_y - 95 * mm),
-            (110 * mm, foto_start_y - 95 * mm),
-        ]
-
-        cell_w = 80 * mm
-        cell_h = 60 * mm
-
-        for idx, (name, img_bytes) in enumerate(photos, start=1):
-            if (idx - 1) % 4 == 0 and idx != 1:
-                new_page()
-                c.setFont("Helvetica-Bold", 13)
-                c.drawString(20 * mm, height - 28 * mm, "Fotodokumentation")
-
-            pos = (idx - 1) % 4
-            x_img, top_y = positions[pos]
-
-            c.setLineWidth(0.4)
-            c.rect(x_img, top_y - 70 * mm, cell_w, 70 * mm)
-
-            c.setFont("Helvetica-Bold", 9)
-            c.drawString(x_img + 3 * mm, top_y - 6 * mm, f"Foto {idx}: {name}")
-
-            try:
-                compressed = compress_image(img_bytes)
-                img = Image.open(compressed).convert("RGB")
-                iw, ih = img.size
-                scale = min(cell_w / iw, cell_h / ih)
-                new_w = iw * scale
-                new_h = ih * scale
-                compressed.seek(0)
-
-                c.drawImage(
-                    ImageReader(compressed),
-                    x_img + (cell_w - new_w) / 2,
-                    (top_y - 12 * mm) - new_h,
-                    width=new_w,
-                    height=new_h,
-                    preserveAspectRatio=True,
-                    mask="auto",
-                )
-            except:
-                pass
+        else:
+            new_page()
+            render_photos(c, width, height, photos, new_page)
 
     c.save()
     buffer.seek(0)
@@ -282,21 +314,22 @@ with st.form("form"):
     temperatur = st.text_input("Temperatur (°C)")
 
     st.subheader("Personal (Anzahl)")
-    polier = st.number_input("Polier", min_value=0)
-    vorarbeiter = st.number_input("Vorarbeiter", min_value=0)
-    facharbeiter = st.number_input("Facharbeiter", min_value=0)
-    bauwerker = st.number_input("Bauwerker", min_value=0)
+    polier = st.number_input("Polier", min_value=0, step=1)
+    vorarbeiter = st.number_input("Vorarbeiter", min_value=0, step=1)
+    facharbeiter = st.number_input("Facharbeiter", min_value=0, step=1)
+    bauwerker = st.number_input("Bauwerker", min_value=0, step=1)
 
     st.subheader("Ausgeführte Arbeiten")
-    arbeiten = st.text_area("Leistungen")
+    arbeiten = st.text_area("Leistungen / Besonderheiten", height=120)
 
     st.subheader("Materiallieferungen")
-    material = st.text_area("Material")
+    material = st.text_area("Material / Menge / Lieferant / Uhrzeit", height=90)
 
     st.subheader("Behinderungen / Mängel")
-    maengel = st.text_area("Mängel")
+    maengel = st.text_area("Beschreibung / Ursache / Verantwortlicher / Dauer", height=90)
 
-    fotos = st.file_uploader("Fotos", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+    st.subheader("Fotos")
+    fotos = st.file_uploader("Fotos hochladen (JPG/PNG)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
 
     submit = st.form_submit_button("PDF erzeugen")
 
@@ -307,25 +340,26 @@ if submit:
             photo_list.append((f.name, f.read()))
 
     data = {
-        "projekt": projekt,
+        "projekt": (projekt or "").strip() or "Projekt",
         "datum": datum.strftime("%d.%m.%Y"),
-        "geschoss": geschoss,
-        "arbeitsort": arbeitsort,
-        "bauleitung": bauleitung,
+        "geschoss": (geschoss or "").strip() or "-",
+        "arbeitsort": (arbeitsort or "").strip(),
+        "bauleitung": (bauleitung or "").strip(),
         "wetter": wetter,
-        "temperatur": temperatur,
-        "polier": polier,
-        "vorarbeiter": vorarbeiter,
-        "facharbeiter": facharbeiter,
-        "bauwerker": bauwerker,
-        "arbeiten": arbeiten,
-        "material": material,
-        "maengel": maengel,
+        "temperatur": (temperatur or "").strip(),
+        "polier": int(polier),
+        "vorarbeiter": int(vorarbeiter),
+        "facharbeiter": int(facharbeiter),
+        "bauwerker": int(bauwerker),
+        "arbeiten": (arbeiten or "").strip(),
+        "material": (material or "").strip(),
+        "maengel": (maengel or "").strip(),
     }
 
     pdf = create_pdf(data, photo_list)
 
-    filename = f"Bautagebuch_{projekt.replace(' ', '_')}_{datum.strftime('%Y-%m-%d')}.pdf"
+    safe_project = "".join(ch for ch in data["projekt"] if ch.isalnum() or ch in (" ", "_", "-", ".")).strip().replace(" ", "_")
+    filename = f"Bautagebuch_{safe_project}_{datum.strftime('%Y-%m-%d')}.pdf"
 
     st.success("PDF erstellt.")
     st.download_button("PDF herunterladen", data=pdf, file_name=filename, mime="application/pdf")
