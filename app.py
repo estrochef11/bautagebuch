@@ -55,7 +55,6 @@ def draw_logo(c, width, height):
 
 
 def draw_header(c, width, height, projekt, page_no):
-    # Projekt mit Vorspann
     projekt_text = f"Projekt: {projekt}"
 
     c.setFont("Helvetica-Bold", 16)
@@ -65,7 +64,6 @@ def draw_header(c, width, height, projekt, page_no):
     c.setLineWidth(0.8)
     c.line(20 * mm, height - 22 * mm, 20 * mm + text_width, height - 22 * mm)
 
-    # Seitennummer
     c.setFont("Helvetica", 9)
     c.drawRightString(width - 20 * mm, 12 * mm, f"Seite {page_no}")
 
@@ -113,6 +111,25 @@ def wrap_text(c, text, x, y, max_width_mm):
     return y
 
 
+def draw_signature_fields(c, width):
+    """
+    Zeichnet zwei Unterschriftenfelder nebeneinander
+    """
+    y = 35 * mm
+
+    line_length = 60 * mm
+
+    # Bauleiter
+    c.setLineWidth(0.8)
+    c.line(25 * mm, y, 25 * mm + line_length, y)
+    c.setFont("Helvetica", 9)
+    c.drawCentredString(25 * mm + line_length / 2, y - 5 * mm, "Bauleiter")
+
+    # Bauherr
+    c.line(width - 25 * mm - line_length, y, width - 25 * mm, y)
+    c.drawCentredString(width - 25 * mm - line_length / 2, y - 5 * mm, "Bauherr")
+
+
 # -------------------------------------------------
 # PDF-Erstellung
 # -------------------------------------------------
@@ -134,9 +151,7 @@ def create_pdf(data, photos):
 
     render_header()
 
-    # zusätzlicher Abstand unter Projektzeile
     y = height - 35 * mm
-
     box_width = width - 30 * mm
     x = 15 * mm
 
@@ -186,14 +201,15 @@ def create_pdf(data, photos):
     y_content = draw_box(c, x, y, box_width, 40 * mm, "Behinderungen / Mängel")
     wrap_text(c, data["maengel"], x + 4 * mm, y_content, 170)
 
+    # Unterschriften
+    draw_signature_fields(c, width)
+
     # Fotos
     if photos:
         new_page()
-
         c.setFont("Helvetica-Bold", 13)
         c.drawString(20 * mm, height - 28 * mm, "Fotodokumentation")
 
-        # zusätzlicher Abstand unter Fotodokumentation
         foto_start_y = height - 40 * mm
 
         positions = [
@@ -223,7 +239,6 @@ def create_pdf(data, photos):
 
             try:
                 compressed = compress_image(img_bytes)
-
                 img = Image.open(compressed).convert("RGB")
                 iw, ih = img.size
                 scale = min(cell_w / iw, cell_h / ih)
