@@ -12,10 +12,11 @@ WEATHER_OPTIONS = ["Sonnig", "Bewölkt", "Regen", "Schnee", "Frost", "Wind"]
 
 
 # -------------------------------------------------
-# Bild-Komprimierung (sehr guter Mittelweg)
+# Bild-Komprimierung
 # -------------------------------------------------
 def compress_image(img_bytes, max_size=1800, quality=75):
     img = Image.open(io.BytesIO(img_bytes))
+
     if img.mode in ("RGBA", "P"):
         img = img.convert("RGB")
 
@@ -39,6 +40,7 @@ def draw_logo(c, width, height):
         buf = io.BytesIO()
         logo.save(buf, format="PNG")
         buf.seek(0)
+
         c.drawImage(
             ImageReader(buf),
             width - 60 * mm,
@@ -48,19 +50,22 @@ def draw_logo(c, width, height):
             preserveAspectRatio=True,
             mask="auto",
         )
-    except Exception:
+    except:
         pass
 
 
 def draw_header(c, width, height, projekt, page_no):
-    # Projekt groß + unterstrichen
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(20 * mm, height - 20 * mm, projekt)
+    # Projekt mit Vorspann
+    projekt_text = f"Projekt: {projekt}"
 
-    text_width = c.stringWidth(projekt, "Helvetica-Bold", 16)
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(20 * mm, height - 20 * mm, projekt_text)
+
+    text_width = c.stringWidth(projekt_text, "Helvetica-Bold", 16)
     c.setLineWidth(0.8)
     c.line(20 * mm, height - 22 * mm, 20 * mm + text_width, height - 22 * mm)
 
+    # Seitennummer
     c.setFont("Helvetica", 9)
     c.drawRightString(width - 20 * mm, 12 * mm, f"Seite {page_no}")
 
@@ -68,15 +73,12 @@ def draw_header(c, width, height, projekt, page_no):
 def draw_box(c, x, y_top, width_box, height_box, title):
     y_bottom = y_top - height_box
 
-    # Außenrahmen dünn
     c.setLineWidth(0.5)
-    c.rect(x, y_bottom, width_box, height_box, stroke=1, fill=0)
+    c.rect(x, y_bottom, width_box, height_box)
 
-    # Titel fett
     c.setFont("Helvetica-Bold", 11)
     c.drawString(x + 4 * mm, y_top - 6 * mm, title)
 
-    # Trennlinie gestrichelt
     c.setLineWidth(0.4)
     c.setDash(2, 2)
     c.line(x, y_top - 8 * mm, x + width_box, y_top - 8 * mm)
@@ -132,7 +134,9 @@ def create_pdf(data, photos):
 
     render_header()
 
+    # zusätzlicher Abstand unter Projektzeile
     y = height - 35 * mm
+
     box_width = width - 30 * mm
     x = 15 * mm
 
@@ -185,14 +189,18 @@ def create_pdf(data, photos):
     # Fotos
     if photos:
         new_page()
+
         c.setFont("Helvetica-Bold", 13)
-        c.drawString(20 * mm, height - 25 * mm, "Fotodokumentation")
+        c.drawString(20 * mm, height - 28 * mm, "Fotodokumentation")
+
+        # zusätzlicher Abstand unter Fotodokumentation
+        foto_start_y = height - 40 * mm
 
         positions = [
-            (20 * mm, height - 45 * mm),
-            (110 * mm, height - 45 * mm),
-            (20 * mm, height - 140 * mm),
-            (110 * mm, height - 140 * mm),
+            (20 * mm, foto_start_y),
+            (110 * mm, foto_start_y),
+            (20 * mm, foto_start_y - 95 * mm),
+            (110 * mm, foto_start_y - 95 * mm),
         ]
 
         cell_w = 80 * mm
@@ -202,7 +210,7 @@ def create_pdf(data, photos):
             if (idx - 1) % 4 == 0 and idx != 1:
                 new_page()
                 c.setFont("Helvetica-Bold", 13)
-                c.drawString(20 * mm, height - 25 * mm, "Fotodokumentation")
+                c.drawString(20 * mm, height - 28 * mm, "Fotodokumentation")
 
             pos = (idx - 1) % 4
             x_img, top_y = positions[pos]
@@ -211,13 +219,10 @@ def create_pdf(data, photos):
             c.rect(x_img, top_y - 70 * mm, cell_w, 70 * mm)
 
             c.setFont("Helvetica-Bold", 9)
-            title = f"Foto {idx}: {name}"
-            if len(title) > 55:
-                title = title[:55] + "..."
-            c.drawString(x_img + 3 * mm, top_y - 6 * mm, title)
+            c.drawString(x_img + 3 * mm, top_y - 6 * mm, f"Foto {idx}: {name}")
 
             try:
-                compressed = compress_image(img_bytes, max_size=1800, quality=75)
+                compressed = compress_image(img_bytes)
 
                 img = Image.open(compressed).convert("RGB")
                 iw, ih = img.size
@@ -235,9 +240,8 @@ def create_pdf(data, photos):
                     preserveAspectRatio=True,
                     mask="auto",
                 )
-            except Exception:
-                c.setFont("Helvetica", 9)
-                c.drawString(x_img + 3 * mm, top_y - 20 * mm, "Bild konnte nicht geladen werden.")
+            except:
+                pass
 
     c.save()
     buffer.seek(0)
@@ -254,9 +258,7 @@ with st.form("form"):
     projekt = st.text_input("Projektname", value="Estrobau Auerbach e.K.")
     datum = st.date_input("Datum", value=date.today())
 
-    st.caption("Beispiele für Geschoss/Bereich: EG, 1. OG, UG, Halle 2, Achse A–C, Technikraum Nord …")
     geschoss = st.text_input("Geschoss / Bereich (frei)")
-
     arbeitsort = st.text_input("Arbeitsort / Einsatzort / Bauteil")
     bauleitung = st.text_input("Bauleitung")
 
@@ -264,22 +266,21 @@ with st.form("form"):
     temperatur = st.text_input("Temperatur (°C)")
 
     st.subheader("Personal (Anzahl)")
-    polier = st.number_input("Polier", min_value=0, step=1)
-    vorarbeiter = st.number_input("Vorarbeiter", min_value=0, step=1)
-    facharbeiter = st.number_input("Facharbeiter", min_value=0, step=1)
-    bauwerker = st.number_input("Bauwerker", min_value=0, step=1)
+    polier = st.number_input("Polier", min_value=0)
+    vorarbeiter = st.number_input("Vorarbeiter", min_value=0)
+    facharbeiter = st.number_input("Facharbeiter", min_value=0)
+    bauwerker = st.number_input("Bauwerker", min_value=0)
 
     st.subheader("Ausgeführte Arbeiten")
-    arbeiten = st.text_area("Leistungen / Besonderheiten", height=120)
+    arbeiten = st.text_area("Leistungen")
 
     st.subheader("Materiallieferungen")
-    material = st.text_area("Material / Menge / Lieferant / Uhrzeit", height=80)
+    material = st.text_area("Material")
 
     st.subheader("Behinderungen / Mängel")
-    maengel = st.text_area("Beschreibung / Ursache / Verantwortlicher / Dauer", height=80)
+    maengel = st.text_area("Mängel")
 
-    st.subheader("Fotos")
-    fotos = st.file_uploader("Fotos hochladen (JPG/PNG)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+    fotos = st.file_uploader("Fotos", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
 
     submit = st.form_submit_button("PDF erzeugen")
 
@@ -290,27 +291,25 @@ if submit:
             photo_list.append((f.name, f.read()))
 
     data = {
-        "projekt": (projekt or "").strip() or "Projekt",
+        "projekt": projekt,
         "datum": datum.strftime("%d.%m.%Y"),
-        "geschoss": (geschoss or "").strip() or "-",
-        "arbeitsort": (arbeitsort or "").strip(),
-        "bauleitung": (bauleitung or "").strip(),
+        "geschoss": geschoss,
+        "arbeitsort": arbeitsort,
+        "bauleitung": bauleitung,
         "wetter": wetter,
-        "temperatur": (temperatur or "").strip(),
-        "polier": int(polier),
-        "vorarbeiter": int(vorarbeiter),
-        "facharbeiter": int(facharbeiter),
-        "bauwerker": int(bauwerker),
-        "arbeiten": (arbeiten or "").strip(),
-        "material": (material or "").strip(),
-        "maengel": (maengel or "").strip(),
+        "temperatur": temperatur,
+        "polier": polier,
+        "vorarbeiter": vorarbeiter,
+        "facharbeiter": facharbeiter,
+        "bauwerker": bauwerker,
+        "arbeiten": arbeiten,
+        "material": material,
+        "maengel": maengel,
     }
 
     pdf = create_pdf(data, photo_list)
 
-    safe_project = "".join(ch for ch in data["projekt"] if ch.isalnum() or ch in (" ", "_", "-", ".")).strip().replace(" ", "_")
-    safe_floor = "".join(ch for ch in data["geschoss"] if ch.isalnum() or ch in (" ", "_", "-", ".")).strip().replace(" ", "_")
-    filename = f"Bautagebuch_{safe_project}_{datum.strftime('%Y-%m-%d')}_{safe_floor}.pdf"
+    filename = f"Bautagebuch_{projekt.replace(' ', '_')}_{datum.strftime('%Y-%m-%d')}.pdf"
 
     st.success("PDF erstellt.")
     st.download_button("PDF herunterladen", data=pdf, file_name=filename, mime="application/pdf")
