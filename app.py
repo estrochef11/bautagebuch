@@ -13,28 +13,20 @@ WEATHER_OPTIONS = ["Sonnig", "Bewölkt", "Regen", "Schnee", "Frost", "Wind"]
 
 
 # -------------------------------------------------
-# Bild-Komprimierung (guter Mittelweg)
+# Bild-Komprimierung (sehr guter Mittelweg)
 # -------------------------------------------------
 
 def compress_image(img_bytes, max_size=1800, quality=75):
-    """
-    Verkleinert Bilder und speichert sie als JPEG.
-    -> PDF wird deutlich kleiner, Fotos bleiben gut erkennbar.
-    """
     img = Image.open(io.BytesIO(img_bytes))
 
-    # Transparenz entfernen
     if img.mode in ("RGBA", "P"):
         img = img.convert("RGB")
 
     w, h = img.size
 
-    # Falls Bild zu groß -> verkleinern
     if max(w, h) > max_size:
         scale = max_size / max(w, h)
-        new_w = int(w * scale)
-        new_h = int(h * scale)
-        img = img.resize((new_w, new_h))
+        img = img.resize((int(w * scale), int(h * scale)))
 
     out = io.BytesIO()
     img.save(out, format="JPEG", quality=quality, optimize=True)
@@ -43,7 +35,7 @@ def compress_image(img_bytes, max_size=1800, quality=75):
 
 
 # -------------------------------------------------
-# Hilfsfunktionen PDF
+# PDF Hilfsfunktionen
 # -------------------------------------------------
 
 def draw_logo(c, width, height):
@@ -67,23 +59,29 @@ def draw_logo(c, width, height):
 
 
 def draw_header(c, width, height, projekt, page_no):
+    # Projekt groß + unterstrichen
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(20 * mm, height - 20 * mm, projekt)
+
+    # Unterstreichung
+    text_width = c.stringWidth(projekt, "Helvetica-Bold", 16)
+    c.setLineWidth(0.8)
+    c.line(20 * mm, height - 22 * mm, 20 * mm + text_width, height - 22 * mm)
+
+    # Seitennummer
     c.setFont("Helvetica", 9)
-    c.drawString(20 * mm, height - 12 * mm, f"Projekt: {projekt}")
     c.drawRightString(width - 20 * mm, 12 * mm, f"Seite {page_no}")
 
 
 def draw_box(c, x, y_top, width_box, height_box, title):
     y_bottom = y_top - height_box
 
-    # dünne Außenlinie
     c.setLineWidth(0.5)
     c.rect(x, y_bottom, width_box, height_box, stroke=1, fill=0)
 
-    # Titel fett
     c.setFont("Helvetica-Bold", 11)
     c.drawString(x + 4 * mm, y_top - 6 * mm, title)
 
-    # dünne gestrichelte Linie unter Titel
     c.setLineWidth(0.4)
     c.setDash(2, 2)
     c.line(x, y_top - 8 * mm, x + width_box, y_top - 8 * mm)
@@ -134,28 +132,29 @@ def create_pdf(data, photos):
     draw_logo(c, width, height)
     draw_header(c, width, height, data["projekt"], page_no)
 
-    y = height - 30 * mm
-
-    # Titel
-    c.setFont("Helvetica-Bold", 15)
-    c.drawString(20 * mm, y, "BAUTAGEBUCH – TAGESBERICHT")
-    y -= 12 * mm
+    y = height - 35 * mm
 
     box_width = width - 30 * mm
     x = 15 * mm
 
     # Stammdaten
-    y_content = draw_box(c, x, y, box_width, 40 * mm, "Stammdaten")
+    y_content = draw_box(c, x, y, box_width, 45 * mm, "Stammdaten")
     c.setFont("Helvetica", 10)
+
     c.drawString(x + 4 * mm, y_content, f"Datum: {data['datum']}")
     c.drawString(x + 90 * mm, y_content, f"Geschoss: {data['geschoss']}")
     y_content -= 6 * mm
+
+    c.drawString(x + 4 * mm, y_content, f"Arbeitsort / Bauteil: {data['arbeitsort']}")
+    y_content -= 6 * mm
+
     c.drawString(x + 4 * mm, y_content, f"Bauleitung: {data['bauleitung'] or '-'}")
     y_content -= 6 * mm
+
     c.drawString(x + 4 * mm, y_content, f"Wetter: {', '.join(data['wetter']) if data['wetter'] else '-'}")
     c.drawString(x + 90 * mm, y_content, f"Temperatur: {data['temperatur'] + ' °C' if data['temperatur'] else '-'}")
 
-    y -= 45 * mm
+    y -= 50 * mm
 
     # Personal
     y_content = draw_box(c, x, y, box_width, 30 * mm, "Personal")
@@ -209,18 +208,14 @@ def create_pdf(data, photos):
             pos = (idx - 1) % 4
             x_img, top_y = positions[pos]
 
-            # dünne Fotobox
             c.setLineWidth(0.4)
             c.rect(x_img, top_y - 70 * mm, cell_w, 70 * mm)
 
             c.setFont("Helvetica-Bold", 9)
-            title = f"Foto {idx}: {name}"
-            if len(title) > 55:
-                title = title[:55] + "..."
-            c.drawString(x_img + 3 * mm, top_y - 6 * mm, title)
+            c.drawString(x_img + 3 * mm, top_y - 6 * mm, f"Foto {idx}: {name}")
 
             try:
-                compressed = compress_image(img_bytes, max_size=1800, quality=75)
+                compressed = compress_image(img_bytes)
 
                 img = Image.open(compressed).convert("RGB")
                 iw, ih = img.size
@@ -258,6 +253,7 @@ with st.form("form"):
     projekt = st.text_input("Projektname", value="Estrobau Auerbach e.K.")
     datum = st.date_input("Datum", value=date.today())
     geschoss = st.selectbox("Geschoss", FLOORS)
+    arbeitsort = st.text_input("Arbeitsort / Einsatzort / Bauteil")
     bauleitung = st.text_input("Bauleitung")
 
     wetter = st.multiselect("Wetter", WEATHER_OPTIONS)
@@ -292,6 +288,7 @@ if submit:
         "projekt": projekt,
         "datum": datum.strftime("%d.%m.%Y"),
         "geschoss": geschoss,
+        "arbeitsort": arbeitsort,
         "bauleitung": bauleitung,
         "wetter": wetter,
         "temperatur": temperatur,
