@@ -40,7 +40,6 @@ def draw_logo(c, width, height):
         buf = io.BytesIO()
         logo.save(buf, format="PNG")
         buf.seek(0)
-
         c.drawImage(
             ImageReader(buf),
             width - 60 * mm,
@@ -82,7 +81,7 @@ def draw_box(c, x, y_top, width_box, height_box, title):
     c.line(x, y_top - 8 * mm, x + width_box, y_top - 8 * mm)
     c.setDash()
 
-    return y_top - 14 * mm
+    return y_top - 14 * mm, y_bottom
 
 
 def wrap_text(c, text, x, y, max_width_mm):
@@ -111,23 +110,19 @@ def wrap_text(c, text, x, y, max_width_mm):
     return y
 
 
-def draw_signature_fields(c, width):
-    """
-    Zeichnet zwei Unterschriftenfelder nebeneinander
-    """
-    y = 35 * mm
-
+def draw_signature_fields(c, width, y_position):
     line_length = 60 * mm
 
-    # Bauleiter
     c.setLineWidth(0.8)
-    c.line(25 * mm, y, 25 * mm + line_length, y)
+
+    # Bauleiter
+    c.line(25 * mm, y_position, 25 * mm + line_length, y_position)
     c.setFont("Helvetica", 9)
-    c.drawCentredString(25 * mm + line_length / 2, y - 5 * mm, "Bauleiter")
+    c.drawCentredString(25 * mm + line_length / 2, y_position - 5 * mm, "Bauleiter")
 
     # Bauherr
-    c.line(width - 25 * mm - line_length, y, width - 25 * mm, y)
-    c.drawCentredString(width - 25 * mm - line_length / 2, y - 5 * mm, "Bauherr")
+    c.line(width - 25 * mm - line_length, y_position, width - 25 * mm, y_position)
+    c.drawCentredString(width - 25 * mm - line_length / 2, y_position - 5 * mm, "Bauherr")
 
 
 # -------------------------------------------------
@@ -156,7 +151,7 @@ def create_pdf(data, photos):
     x = 15 * mm
 
     # Stammdaten
-    y_content = draw_box(c, x, y, box_width, 50 * mm, "Stammdaten")
+    y_content, y_bottom = draw_box(c, x, y, box_width, 50 * mm, "Stammdaten")
     c.setFont("Helvetica", 10)
 
     c.drawString(x + 4 * mm, y_content, f"Datum: {data['datum']}")
@@ -172,10 +167,10 @@ def create_pdf(data, photos):
     c.drawString(x + 4 * mm, y_content, f"Wetter: {', '.join(data['wetter']) if data['wetter'] else '-'}")
     c.drawString(x + 90 * mm, y_content, f"Temperatur: {data['temperatur'] + ' °C' if data['temperatur'] else '-'}")
 
-    y -= 55 * mm
+    y = y_bottom - 10 * mm
 
     # Personal
-    y_content = draw_box(c, x, y, box_width, 30 * mm, "Personal")
+    y_content, y_bottom = draw_box(c, x, y, box_width, 30 * mm, "Personal")
     c.setFont("Helvetica", 10)
     c.drawString(x + 4 * mm, y_content, f"Polier: {data['polier']}")
     c.drawString(x + 70 * mm, y_content, f"Vorarbeiter: {data['vorarbeiter']}")
@@ -183,26 +178,32 @@ def create_pdf(data, photos):
     c.drawString(x + 4 * mm, y_content, f"Facharbeiter: {data['facharbeiter']}")
     c.drawString(x + 70 * mm, y_content, f"Bauwerker: {data['bauwerker']}")
 
-    y -= 35 * mm
+    y = y_bottom - 10 * mm
 
     # Arbeiten
-    y_content = draw_box(c, x, y, box_width, 45 * mm, "Ausgeführte Arbeiten")
+    y_content, y_bottom = draw_box(c, x, y, box_width, 45 * mm, "Ausgeführte Arbeiten")
     wrap_text(c, data["arbeiten"], x + 4 * mm, y_content, 170)
 
-    y -= 50 * mm
+    y = y_bottom - 10 * mm
 
     # Material
-    y_content = draw_box(c, x, y, box_width, 40 * mm, "Materiallieferungen")
+    y_content, y_bottom = draw_box(c, x, y, box_width, 40 * mm, "Materiallieferungen")
     wrap_text(c, data["material"], x + 4 * mm, y_content, 170)
 
-    y -= 45 * mm
+    y = y_bottom - 10 * mm
 
     # Mängel
-    y_content = draw_box(c, x, y, box_width, 40 * mm, "Behinderungen / Mängel")
+    y_content, y_bottom = draw_box(c, x, y, box_width, 40 * mm, "Behinderungen / Mängel")
     wrap_text(c, data["maengel"], x + 4 * mm, y_content, 170)
 
-    # Unterschriften
-    draw_signature_fields(c, width)
+    y = y_bottom - 15 * mm
+
+    # Falls zu wenig Platz -> neue Seite für Unterschrift
+    if y < 40 * mm:
+        new_page()
+        y = height - 60 * mm
+
+    draw_signature_fields(c, width, y)
 
     # Fotos
     if photos:
