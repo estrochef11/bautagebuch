@@ -8,12 +8,11 @@ from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 
 
-FLOOR_OPTIONS = ["EG", "1. OG", "2. OG", "UG", "DG", "Eigene Eingabe"]
 WEATHER_OPTIONS = ["Sonnig", "Bewölkt", "Regen", "Schnee", "Frost", "Wind"]
 
 
 # -------------------------------------------------
-# Bild-Komprimierung (guter Mittelweg)
+# Bild-Komprimierung (sehr guter Mittelweg)
 # -------------------------------------------------
 def compress_image(img_bytes, max_size=1800, quality=75):
     img = Image.open(io.BytesIO(img_bytes))
@@ -69,12 +68,15 @@ def draw_header(c, width, height, projekt, page_no):
 def draw_box(c, x, y_top, width_box, height_box, title):
     y_bottom = y_top - height_box
 
+    # Außenrahmen dünn
     c.setLineWidth(0.5)
     c.rect(x, y_bottom, width_box, height_box, stroke=1, fill=0)
 
+    # Titel fett
     c.setFont("Helvetica-Bold", 11)
     c.drawString(x + 4 * mm, y_top - 6 * mm, title)
 
+    # Trennlinie gestrichelt
     c.setLineWidth(0.4)
     c.setDash(2, 2)
     c.line(x, y_top - 8 * mm, x + width_box, y_top - 8 * mm)
@@ -139,7 +141,7 @@ def create_pdf(data, photos):
     c.setFont("Helvetica", 10)
 
     c.drawString(x + 4 * mm, y_content, f"Datum: {data['datum']}")
-    c.drawString(x + 90 * mm, y_content, f"Geschoss: {data['geschoss']}")
+    c.drawString(x + 90 * mm, y_content, f"Geschoss/Bereich: {data['geschoss']}")
     y_content -= 6 * mm
 
     c.drawString(x + 4 * mm, y_content, f"Arbeitsort / Einsatzort / Bauteil: {data['arbeitsort'] or '-'}")
@@ -249,92 +251,66 @@ st.set_page_config(page_title="Bautagebuch", layout="wide")
 st.title("Digitales Bautagebuch")
 
 with st.form("form"):
-    projekt = st.text_input("Projektname", value="Estrobau Auerbach e.K.", key="projekt")
-    datum = st.date_input("Datum", value=date.today(), key="datum")
+    projekt = st.text_input("Projektname", value="Estrobau Auerbach e.K.")
+    datum = st.date_input("Datum", value=date.today())
 
-    # Wichtig: feste keys + freie Eingabe immer als eigenes Feld
-    floor_selection = st.selectbox("Geschoss (Auswahl oder frei)", FLOOR_OPTIONS, key="geschoss_select")
-    geschoss_frei = st.text_input(
-        "Geschoss / Bereich (frei eingeben)",
-        placeholder="z.B. Halle 2, Achse A–C, Technikraum Nord, 3. OG …",
-        key="geschoss_frei",
-    )
+    st.caption("Beispiele für Geschoss/Bereich: EG, 1. OG, UG, Halle 2, Achse A–C, Technikraum Nord …")
+    geschoss = st.text_input("Geschoss / Bereich (frei)")
 
-    # Nur optisch Hinweis, welches Feld gilt
-    if floor_selection != "Eigene Eingabe":
-        st.caption(f"Übernommen wird: **{floor_selection}** (Freitext wird ignoriert)")
-    else:
-        st.caption("Übernommen wird: **Freitext** (bitte oben eingeben)")
+    arbeitsort = st.text_input("Arbeitsort / Einsatzort / Bauteil")
+    bauleitung = st.text_input("Bauleitung")
 
-    arbeitsort = st.text_input(
-        "Arbeitsort / Einsatzort / Bauteil",
-        placeholder="z.B. Treppenhaus 2, Flur West, Raum 1.12, Bauteil B …",
-        key="arbeitsort",
-    )
-    bauleitung = st.text_input("Bauleitung", key="bauleitung")
-
-    wetter = st.multiselect("Wetter", WEATHER_OPTIONS, key="wetter")
-    temperatur = st.text_input("Temperatur (°C)", key="temperatur")
+    wetter = st.multiselect("Wetter", WEATHER_OPTIONS)
+    temperatur = st.text_input("Temperatur (°C)")
 
     st.subheader("Personal (Anzahl)")
-    polier = st.number_input("Polier", min_value=0, step=1, key="polier")
-    vorarbeiter = st.number_input("Vorarbeiter", min_value=0, step=1, key="vorarbeiter")
-    facharbeiter = st.number_input("Facharbeiter", min_value=0, step=1, key="facharbeiter")
-    bauwerker = st.number_input("Bauwerker", min_value=0, step=1, key="bauwerker")
+    polier = st.number_input("Polier", min_value=0, step=1)
+    vorarbeiter = st.number_input("Vorarbeiter", min_value=0, step=1)
+    facharbeiter = st.number_input("Facharbeiter", min_value=0, step=1)
+    bauwerker = st.number_input("Bauwerker", min_value=0, step=1)
 
     st.subheader("Ausgeführte Arbeiten")
-    arbeiten = st.text_area("Leistungen / Besonderheiten", height=120, key="arbeiten")
+    arbeiten = st.text_area("Leistungen / Besonderheiten", height=120)
 
     st.subheader("Materiallieferungen")
-    material = st.text_area("Material / Menge / Lieferant / Uhrzeit", height=80, key="material")
+    material = st.text_area("Material / Menge / Lieferant / Uhrzeit", height=80)
 
     st.subheader("Behinderungen / Mängel")
-    maengel = st.text_area("Beschreibung / Ursache / Verantwortlicher / Dauer", height=80, key="maengel")
+    maengel = st.text_area("Beschreibung / Ursache / Verantwortlicher / Dauer", height=80)
 
     st.subheader("Fotos")
-    fotos = st.file_uploader(
-        "Fotos hochladen (JPG/PNG)",
-        type=["jpg", "jpeg", "png"],
-        accept_multiple_files=True,
-        key="fotos",
-    )
+    fotos = st.file_uploader("Fotos hochladen (JPG/PNG)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
 
     submit = st.form_submit_button("PDF erzeugen")
 
 if submit:
-    # Hier wird eindeutig entschieden, was als Geschoss verwendet wird
-    if st.session_state["geschoss_select"] != "Eigene Eingabe":
-        geschoss_final = st.session_state["geschoss_select"]
-    else:
-        geschoss_final = (st.session_state["geschoss_frei"] or "").strip() or "-"
-
     photo_list = []
-    if st.session_state["fotos"]:
-        for f in st.session_state["fotos"]:
+    if fotos:
+        for f in fotos:
             photo_list.append((f.name, f.read()))
 
     data = {
-        "projekt": (st.session_state["projekt"] or "").strip() or "Projekt",
-        "datum": st.session_state["datum"].strftime("%d.%m.%Y"),
-        "geschoss": geschoss_final,
-        "arbeitsort": (st.session_state["arbeitsort"] or "").strip(),
-        "bauleitung": (st.session_state["bauleitung"] or "").strip(),
-        "wetter": st.session_state["wetter"],
-        "temperatur": (st.session_state["temperatur"] or "").strip(),
-        "polier": int(st.session_state["polier"]),
-        "vorarbeiter": int(st.session_state["vorarbeiter"]),
-        "facharbeiter": int(st.session_state["facharbeiter"]),
-        "bauwerker": int(st.session_state["bauwerker"]),
-        "arbeiten": (st.session_state["arbeiten"] or "").strip(),
-        "material": (st.session_state["material"] or "").strip(),
-        "maengel": (st.session_state["maengel"] or "").strip(),
+        "projekt": (projekt or "").strip() or "Projekt",
+        "datum": datum.strftime("%d.%m.%Y"),
+        "geschoss": (geschoss or "").strip() or "-",
+        "arbeitsort": (arbeitsort or "").strip(),
+        "bauleitung": (bauleitung or "").strip(),
+        "wetter": wetter,
+        "temperatur": (temperatur or "").strip(),
+        "polier": int(polier),
+        "vorarbeiter": int(vorarbeiter),
+        "facharbeiter": int(facharbeiter),
+        "bauwerker": int(bauwerker),
+        "arbeiten": (arbeiten or "").strip(),
+        "material": (material or "").strip(),
+        "maengel": (maengel or "").strip(),
     }
 
     pdf = create_pdf(data, photo_list)
 
     safe_project = "".join(ch for ch in data["projekt"] if ch.isalnum() or ch in (" ", "_", "-", ".")).strip().replace(" ", "_")
     safe_floor = "".join(ch for ch in data["geschoss"] if ch.isalnum() or ch in (" ", "_", "-", ".")).strip().replace(" ", "_")
-    filename = f"Bautagebuch_{safe_project}_{st.session_state['datum'].strftime('%Y-%m-%d')}_{safe_floor}.pdf"
+    filename = f"Bautagebuch_{safe_project}_{datum.strftime('%Y-%m-%d')}_{safe_floor}.pdf"
 
     st.success("PDF erstellt.")
     st.download_button("PDF herunterladen", data=pdf, file_name=filename, mime="application/pdf")
