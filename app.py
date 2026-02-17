@@ -10,6 +10,10 @@ from reportlab.lib.utils import ImageReader
 
 WEATHER_OPTIONS = ["Sonnig", "Bewölkt", "Regen", "Schnee", "Frost", "Wind"]
 
+FONT_BODY = ("Helvetica", 10)
+FONT_TITLE = ("Helvetica-Bold", 11)
+LINE_H = 5 * mm  # Zeilenhöhe Text
+
 
 # -------------------------------------------------
 # Bild-Komprimierung
@@ -31,7 +35,57 @@ def compress_image(img_bytes, max_size=1800, quality=75):
 
 
 # -------------------------------------------------
-# PDF Hilfsfunktionen
+# Text-Layout
+# -------------------------------------------------
+def split_text_to_lines(c, text, font_name, font_size, max_width_pt):
+    c.setFont(font_name, font_size)
+    text = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    paragraphs = text.split("\n")
+
+    lines = []
+    for p in paragraphs:
+        p = p.strip()
+        if not p:
+            lines.append("")
+            continue
+        words = p.split()
+        cur = ""
+        for w in words:
+            test = (cur + " " + w).strip()
+            if c.stringWidth(test, font_name, font_size) <= max_width_pt:
+                cur = test
+            else:
+                if cur:
+                    lines.append(cur)
+                cur = w
+        if cur:
+            lines.append(cur)
+
+    if not lines:
+        lines = ["-"]
+    return lines
+
+
+def box_height_for_lines(num_lines):
+    title_block = 14 * mm
+    inner_padding = 6 * mm
+    return title_block + inner_padding + max(1, num_lines) * LINE_H
+
+
+def draw_lines(c, lines, x, y_start):
+    c.setFont(*FONT_BODY)
+    y = y_start
+    for ln in lines:
+        if ln == "":
+            y -= LINE_H
+        else:
+            c.drawString(x, y, ln)
+            y -= LINE_H
+    return y
+
+
+# -------------------------------------------------
+# PDF Header / Boxes
 # -------------------------------------------------
 def draw_logo(c, width, height):
     try:
@@ -66,95 +120,73 @@ def draw_header(c, width, height, projekt, page_no):
     c.drawRightString(width - 20 * mm, 12 * mm, f"Seite {page_no}")
 
 
-def draw_box(c, x, y_top, width_box, height_box, title):
-    y_bottom = y_top - height_box
+def draw_box_frame(c, x, y_top, w, h, title):
+    y_bottom = y_top - h
 
     c.setLineWidth(0.5)
-    c.rect(x, y_bottom, width_box, height_box)
+    c.rect(x, y_bottom, w, h)
 
-    c.setFont("Helvetica-Bold", 11)
+    c.setFont(*FONT_TITLE)
     c.drawString(x + 4 * mm, y_top - 6 * mm, title)
 
     c.setLineWidth(0.4)
     c.setDash(2, 2)
-    c.line(x, y_top - 8 * mm, x + width_box, y_top - 8 * mm)
+    c.line(x, y_top - 8 * mm, x + w, y_top - 8 * mm)
     c.setDash()
 
-    return y_top - 14 * mm, y_bottom
-
-
-def wrap_text(c, text, x, y, max_width_mm):
-    c.setFont("Helvetica", 10)
-    max_width = max_width_mm * mm
-    words = (text or "").split()
-    line = ""
-
-    if not words:
-        c.drawString(x, y, "-")
-        return y - 5 * mm
-
-    for word in words:
-        test = (line + " " + word).strip()
-        if c.stringWidth(test, "Helvetica", 10) <= max_width:
-            line = test
-        else:
-            c.drawString(x, y, line)
-            y -= 5 * mm
-            line = word
-
-    if line:
-        c.drawString(x, y, line)
-        y -= 5 * mm
-
-    return y
-
-
-def draw_signature_single(c, width, y_line):
-    """
-    Eine Unterschrift: Bauleiter/Bauherr
-    """
-    line_len = 110 * mm
-    x_left = (width - line_len) / 2
-
-    c.setLineWidth(0.8)
-    c.line(x_left, y_line, x_left + line_len, y_line)
-
-    c.setFont("Helvetica", 9)
-    c.drawCentredString(width / 2, y_line - 5 * mm, "Unterschrift Bauleiter / Bauherr")
+    text_y = y_top - 14 * mm
+    return text_y, y_bottom
 
 
 # -------------------------------------------------
-# Fotoseiten (kapseln wir sauber)
+# Fotos: Render ab beliebiger Startposition (gleiche Seite möglich)
 # -------------------------------------------------
-def render_photos(c, width, height, photos, new_page_func):
+def render_photos_from_y(c, width, height, photos, new_page_func, start_y):
+    """
+    Rendert Fotodokumentation ab start_y auf der aktuellen Seite.
+    Falls Fotos nicht passen -> neue Seiten wie üblich.
+    """
+    # Titel
     c.setFont("Helvetica-Bold", 13)
-    c.drawString(20 * mm, height - 28 * mm, "Fotodokumentation")
+    c.drawString(20 * mm, start_y, "Fotodokumentation")
 
-    # kleiner Abstand unter "Fotodokumentation"
-    foto_start_y = height - 40 * mm
-
-    positions = [
-        (20 * mm, foto_start_y),
-        (110 * mm, foto_start_y),
-        (20 * mm, foto_start_y - 95 * mm),
-        (110 * mm, foto_start_y - 95 * mm),
-    ]
+    # kleiner Abstand unter Titel
+    base_top = start_y - 12 * mm
 
     cell_w = 80 * mm
     cell_h = 60 * mm
+    cell_box_h = 70 * mm
+
+    # 2 Spalten, 2 Zeilen pro Seite (4 Fotos)
+    # Top-Koordinaten je Zelle
+    def positions_for_page(top_y):
+        return [
+            (20 * mm, top_y),
+            (110 * mm, top_y),
+            (20 * mm, top_y - 95 * mm),
+            (110 * mm, top_y - 95 * mm),
+        ]
+
+    positions = positions_for_page(base_top)
 
     for idx, (name, img_bytes) in enumerate(photos, start=1):
+        # alle 4 Fotos neue Seite
         if (idx - 1) % 4 == 0 and idx != 1:
             new_page_func()
+            # auf neuer Seite wieder normal oben
             c.setFont("Helvetica-Bold", 13)
             c.drawString(20 * mm, height - 28 * mm, "Fotodokumentation")
+            base_top = (height - 40 * mm)  # Top-Y für erste Zeile
+            positions = positions_for_page(base_top)
 
         pos = (idx - 1) % 4
         x_img, top_y = positions[pos]
 
+        # Box
         c.setLineWidth(0.4)
-        c.rect(x_img, top_y - 70 * mm, cell_w, 70 * mm)
+        c.rect(x_img, top_y - cell_box_h, cell_w, cell_box_h)
 
+        # Titel
         c.setFont("Helvetica-Bold", 9)
         title = f"Foto {idx}: {name}"
         if len(title) > 60:
@@ -184,13 +216,18 @@ def render_photos(c, width, height, photos, new_page_func):
 
 
 # -------------------------------------------------
-# PDF-Erstellung
+# PDF-Erstellung (dynamisch + Fotos auf gleicher Seite wenn Platz)
 # -------------------------------------------------
 def create_pdf(data, photos):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
     page_no = 1
+
+    x = 15 * mm
+    box_w = width - 30 * mm
+    gap = 6 * mm
+    bottom_margin = 18 * mm
 
     def render_header():
         draw_logo(c, width, height)
@@ -203,93 +240,90 @@ def create_pdf(data, photos):
         render_header()
 
     render_header()
-
-    # Start unter Kopf (kleiner Abstand)
     y = height - 35 * mm
-    box_width = width - 30 * mm
-    x = 15 * mm
-    gap = 6 * mm  # etwas kompakter
 
-    # Stammdaten (kleiner gemacht)
-    y_content, y_bottom = draw_box(c, x, y, box_width, 42 * mm, "Stammdaten")
-    c.setFont("Helvetica", 10)
-    c.drawString(x + 4 * mm, y_content, f"Datum: {data['datum']}")
-    c.drawString(x + 90 * mm, y_content, f"Geschoss/Bereich: {data['geschoss']}")
-    y_content -= 6 * mm
-    c.drawString(x + 4 * mm, y_content, f"Arbeitsort / Einsatzort / Bauteil: {data['arbeitsort'] or '-'}")
-    y_content -= 6 * mm
-    c.drawString(x + 4 * mm, y_content, f"Bauleitung: {data['bauleitung'] or '-'}")
-    y_content -= 6 * mm
-    c.drawString(x + 4 * mm, y_content, f"Wetter: {', '.join(data['wetter']) if data['wetter'] else '-'}")
-    c.drawString(x + 90 * mm, y_content, f"Temperatur: {data['temperatur'] + ' °C' if data['temperatur'] else '-'}")
+    # Stammdaten (kompakt, fix)
+    stammdaten_h = 40 * mm
+    text_y, y_bottom = draw_box_frame(c, x, y, box_w, stammdaten_h, "Stammdaten")
+    c.setFont(*FONT_BODY)
+    c.drawString(x + 4 * mm, text_y, f"Datum: {data['datum']}")
+    c.drawString(x + 90 * mm, text_y, f"Geschoss/Bereich: {data['geschoss']}")
+    text_y -= 6 * mm
+    c.drawString(x + 4 * mm, text_y, f"Arbeitsort / Einsatzort / Bauteil: {data['arbeitsort'] or '-'}")
+    text_y -= 6 * mm
+    c.drawString(x + 4 * mm, text_y, f"Bauleitung: {data['bauleitung'] or '-'}")
+    text_y -= 6 * mm
+    c.drawString(x + 4 * mm, text_y, f"Wetter: {', '.join(data['wetter']) if data['wetter'] else '-'}")
+    c.drawString(x + 90 * mm, text_y, f"Temperatur: {data['temperatur'] + ' °C' if data['temperatur'] else '-'}")
 
     y = y_bottom - gap
 
-    # Personal
-    y_content, y_bottom = draw_box(c, x, y, box_width, 30 * mm, "Personal")
-    c.setFont("Helvetica", 10)
-    c.drawString(x + 4 * mm, y_content, f"Polier: {int(data['polier'])}")
-    c.drawString(x + 70 * mm, y_content, f"Vorarbeiter: {int(data['vorarbeiter'])}")
-    y_content -= 6 * mm
-    c.drawString(x + 4 * mm, y_content, f"Facharbeiter: {int(data['facharbeiter'])}")
-    c.drawString(x + 70 * mm, y_content, f"Bauwerker: {int(data['bauwerker'])}")
+    # Personal (fix)
+    personal_h = 30 * mm
+    if y - personal_h < bottom_margin:
+        new_page()
+        y = height - 35 * mm
+
+    text_y, y_bottom = draw_box_frame(c, x, y, box_w, personal_h, "Personal")
+    c.setFont(*FONT_BODY)
+    c.drawString(x + 4 * mm, text_y, f"Polier: {int(data['polier'])}")
+    c.drawString(x + 70 * mm, text_y, f"Vorarbeiter: {int(data['vorarbeiter'])}")
+    text_y -= 6 * mm
+    c.drawString(x + 4 * mm, text_y, f"Facharbeiter: {int(data['facharbeiter'])}")
+    c.drawString(x + 70 * mm, text_y, f"Bauwerker: {int(data['bauwerker'])}")
 
     y = y_bottom - gap
 
-    # Arbeiten
-    y_content, y_bottom = draw_box(c, x, y, box_width, 42 * mm, "Ausgeführte Arbeiten")
-    wrap_text(c, data["arbeiten"], x + 4 * mm, y_content, 170)
+    # Dynamische Textboxen
+    def draw_dynamic_textbox(title, text):
+        nonlocal y
+        max_text_width = box_w - 8 * mm
+        lines = split_text_to_lines(c, text, FONT_BODY[0], FONT_BODY[1], max_text_width)
+        h_needed = box_height_for_lines(len(lines))
 
-    y = y_bottom - gap
+        if y - h_needed < bottom_margin:
+            new_page()
+            y = height - 35 * mm
 
-    # Material
-    y_content, y_bottom = draw_box(c, x, y, box_width, 34 * mm, "Materiallieferungen")
-    wrap_text(c, data["material"], x + 4 * mm, y_content, 170)
+        text_y_loc, y_bottom_loc = draw_box_frame(c, x, y, box_w, h_needed, title)
+        draw_lines(c, lines, x + 4 * mm, text_y_loc)
+        y = y_bottom_loc - gap
 
-    y = y_bottom - gap
+    draw_dynamic_textbox("Ausgeführte Arbeiten", data["arbeiten"])
+    draw_dynamic_textbox("Materiallieferungen", data["material"])
+    draw_dynamic_textbox("Behinderungen / Mängel", data["maengel"])
 
-    # Mängel
-    y_content, y_bottom = draw_box(c, x, y, box_width, 34 * mm, "Behinderungen / Mängel")
-    wrap_text(c, data["maengel"], x + 4 * mm, y_content, 170)
+    # Unterschrift als Kasten (fix)
+    sig_h = 26 * mm
+    if y - sig_h < bottom_margin:
+        new_page()
+        y = height - 35 * mm
 
-    # -------------------------------------------------
-    # Unterschrift: bevorzugt auf Seite 1 unter den Kästen
-    # -------------------------------------------------
-    signature_needed_height = 18 * mm  # Linie + Beschriftung
-    min_bottom_margin = 20 * mm
-    y_after_boxes = y_bottom - (8 * mm)  # kleiner Abstand nach Box
+    text_y, y_bottom = draw_box_frame(c, x, y, box_w, sig_h, "Unterschrift")
+    line_y = text_y - 6 * mm
+    c.setLineWidth(0.8)
+    c.line(x + 35 * mm, line_y, x + box_w - 35 * mm, line_y)
+    c.setFont("Helvetica", 9)
+    c.drawCentredString(x + box_w / 2, line_y - 5 * mm, "Bauleiter / Bauherr")
 
-    # Prüfen, ob Platz bis Seitenende reicht
-    if y_after_boxes - signature_needed_height >= min_bottom_margin:
-        sig_y = max(min_bottom_margin + 10 * mm, y_after_boxes)  # "max" verhindert zu tief
-        draw_signature_single(c, width, sig_y)
-        signature_on_first_page = True
-    else:
-        signature_on_first_page = False
+    # Ab hier: Fotos möglichst auf derselben Seite
+    y_after_sig = y_bottom - (8 * mm)
 
-    # -------------------------------------------------
-    # Fotos: wenn Signatur nicht passte -> neue Seite, dort oben Signatur,
-    # dann direkt darunter Fotodokumentation (keine Signatur-Blankoseite)
-    # -------------------------------------------------
     if photos:
-        if not signature_on_first_page:
-            new_page()
-            # Unterschrift oben
-            sig_y = height - 55 * mm
-            draw_signature_single(c, width, sig_y)
+        # Minimaler Platz, damit wir zumindest die Überschrift + 1 Foto-Kachel unterbringen
+        # Foto-Grid braucht für "Titel + erste Reihe" grob:
+        # Titel (0) + Abstand + Boxhöhe 70mm => ca. 12mm + 70mm = 82mm
+        min_needed = 90 * mm
 
-            # Fotodoku direkt darunter
-            c.setFont("Helvetica-Bold", 13)
-            c.drawString(20 * mm, height - 75 * mm, "Fotodokumentation")
-            # Wir rendern Fotos ab der "normalen" Fotoposition, aber etwas nach unten versetzt
-            # -> dafür nutzen wir einfach render_photos auf einer frischen Seite:
-            # Trick: neue Seite, damit die Standardposition passt und ruhig bleibt
+        # Wenn nicht genug Platz -> neue Seite für Fotos
+        if y_after_sig - min_needed < bottom_margin:
             new_page()
-            render_photos(c, width, height, photos, new_page)
-
+            start_y = height - 28 * mm
         else:
-            new_page()
-            render_photos(c, width, height, photos, new_page)
+            # Start direkt darunter (nicht zu nah)
+            start_y = y_after_sig
+
+        render_photos_from_y(c, width, height, photos, new_page, start_y)
 
     c.save()
     buffer.seek(0)
