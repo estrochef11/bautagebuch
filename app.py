@@ -13,7 +13,37 @@ WEATHER_OPTIONS = ["Sonnig", "Bewölkt", "Regen", "Schnee", "Frost", "Wind"]
 
 
 # -------------------------------------------------
-# Hilfsfunktionen
+# Bild-Komprimierung (guter Mittelweg)
+# -------------------------------------------------
+
+def compress_image(img_bytes, max_size=1800, quality=75):
+    """
+    Verkleinert Bilder und speichert sie als JPEG.
+    -> PDF wird deutlich kleiner, Fotos bleiben gut erkennbar.
+    """
+    img = Image.open(io.BytesIO(img_bytes))
+
+    # Transparenz entfernen
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+
+    w, h = img.size
+
+    # Falls Bild zu groß -> verkleinern
+    if max(w, h) > max_size:
+        scale = max_size / max(w, h)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        img = img.resize((new_w, new_h))
+
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=quality, optimize=True)
+    out.seek(0)
+    return out
+
+
+# -------------------------------------------------
+# Hilfsfunktionen PDF
 # -------------------------------------------------
 
 def draw_logo(c, width, height):
@@ -45,15 +75,19 @@ def draw_header(c, width, height, projekt, page_no):
 def draw_box(c, x, y_top, width_box, height_box, title):
     y_bottom = y_top - height_box
 
-    # Rahmen
+    # dünne Außenlinie
+    c.setLineWidth(0.5)
     c.rect(x, y_bottom, width_box, height_box, stroke=1, fill=0)
 
     # Titel fett
     c.setFont("Helvetica-Bold", 11)
     c.drawString(x + 4 * mm, y_top - 6 * mm, title)
 
-    # Linie unter Titel
+    # dünne gestrichelte Linie unter Titel
+    c.setLineWidth(0.4)
+    c.setDash(2, 2)
     c.line(x, y_top - 8 * mm, x + width_box, y_top - 8 * mm)
+    c.setDash()
 
     return y_top - 14 * mm
 
@@ -97,7 +131,6 @@ def create_pdf(data, photos):
         draw_logo(c, width, height)
         draw_header(c, width, height, data["projekt"], page_no)
 
-    # Erste Seite
     draw_logo(c, width, height)
     draw_header(c, width, height, data["projekt"], page_no)
 
@@ -137,19 +170,19 @@ def create_pdf(data, photos):
 
     # Arbeiten
     y_content = draw_box(c, x, y, box_width, 45 * mm, "Ausgeführte Arbeiten")
-    y_text = wrap_text(c, data["arbeiten"], x + 4 * mm, y_content, 170)
+    wrap_text(c, data["arbeiten"], x + 4 * mm, y_content, 170)
 
     y -= 50 * mm
 
     # Material
     y_content = draw_box(c, x, y, box_width, 40 * mm, "Materiallieferungen")
-    y_text = wrap_text(c, data["material"], x + 4 * mm, y_content, 170)
+    wrap_text(c, data["material"], x + 4 * mm, y_content, 170)
 
     y -= 45 * mm
 
     # Mängel
     y_content = draw_box(c, x, y, box_width, 40 * mm, "Behinderungen / Mängel")
-    y_text = wrap_text(c, data["maengel"], x + 4 * mm, y_content, 170)
+    wrap_text(c, data["maengel"], x + 4 * mm, y_content, 170)
 
     # Fotos
     if photos:
@@ -176,6 +209,8 @@ def create_pdf(data, photos):
             pos = (idx - 1) % 4
             x_img, top_y = positions[pos]
 
+            # dünne Fotobox
+            c.setLineWidth(0.4)
             c.rect(x_img, top_y - 70 * mm, cell_w, 70 * mm)
 
             c.setFont("Helvetica-Bold", 9)
@@ -185,18 +220,18 @@ def create_pdf(data, photos):
             c.drawString(x_img + 3 * mm, top_y - 6 * mm, title)
 
             try:
-                img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+                compressed = compress_image(img_bytes, max_size=1800, quality=75)
+
+                img = Image.open(compressed).convert("RGB")
                 iw, ih = img.size
                 scale = min(cell_w / iw, cell_h / ih)
                 new_w = iw * scale
                 new_h = ih * scale
 
-                img_buf = io.BytesIO()
-                img.save(img_buf, format="JPEG", quality=85)
-                img_buf.seek(0)
+                compressed.seek(0)
 
                 c.drawImage(
-                    ImageReader(img_buf),
+                    ImageReader(compressed),
                     x_img + (cell_w - new_w) / 2,
                     (top_y - 12 * mm) - new_h,
                     width=new_w,
@@ -217,7 +252,6 @@ def create_pdf(data, photos):
 # -------------------------------------------------
 
 st.set_page_config(page_title="Bautagebuch", layout="wide")
-
 st.title("Digitales Bautagebuch")
 
 with st.form("form"):
